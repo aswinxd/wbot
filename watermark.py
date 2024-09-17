@@ -1,22 +1,20 @@
-from telethon import TelegramClient, events, Button
+from telethon import TelegramClient, events
 from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument
 from telethon.errors import FloodWaitError
 import asyncio
 import motor.motor_asyncio
-import re
 import os
 import subprocess
 
 api_id = "22181658"
 api_hash = '3138df6840cbdbc28c370fd29218139a'
-bot_token = '7111525295:AAHNh9AQJ4Wejldqm_qb-3P37c4HGGkAAus'
+bot_token = 'your_bot_token_here'
 client = TelegramClient('user_session', api_id, api_hash)
 bot = TelegramClient('bot_session', api_id, api_hash)
-mongo_client = motor.motor_asyncio.AsyncIOMotorClient('mongodb+srv://mdalizadeh16:lavos@cluster0.u21tcwa.mongodb.net/?retryWrites=true&w=majority')
+mongo_client = motor.motor_asyncio.AsyncIOMotorClient('mongodb+srv://your_mongodb_url_here')
 db = mongo_client['telegram_bot']
 collection = db['schedules']
 tasks = {}
-
 
 async def add_text_watermark(input_file, output_file, watermark_text):
     command = [
@@ -37,13 +35,8 @@ async def start_user_session():
     print("Starting user session...")
     await client.start()
 
-# Updated forward_messages function with caption and button support
-async def forward_messages(user_id, schedule_name, source_channel_id, destination_channel_id, batch_size, delay, caption, button_data):
+async def forward_messages(user_id, schedule_name, source_channel_id, destination_channel_id, batch_size, delay, caption, watermark_text):
     post_counter = 0
-    watermark_text = "sulaiman"
-
-    # Convert button data (dict) back to Telethon Button objects
-    buttons = [Button.url(btn['text'], btn['url']) for btn in button_data]
 
     async with client:
         async for message in client.iter_messages(int(source_channel_id), reverse=True):
@@ -53,27 +46,13 @@ async def forward_messages(user_id, schedule_name, source_channel_id, destinatio
 
             if isinstance(message.media, (MessageMediaPhoto, MessageMediaDocument)):
                 try:
-                    # Download the media
                     media_file = await client.download_media(message)
                     watermarked_file = f"watermarked_{os.path.basename(media_file)}"
-
-                    # Add text watermark to the downloaded media
                     await add_text_watermark(media_file, watermarked_file, watermark_text)
-
-                    # Send the watermarked media to the destination channel with caption and buttons
-                    sent_message = await client.send_file(
-                        int(destination_channel_id),
-                        watermarked_file,
-                        caption=caption,
-                        buttons=buttons
-                    )
-
+                    await client.send_file(int(destination_channel_id), watermarked_file, caption=caption)
                     post_counter += 1
-
-                    # Clean up the media files after sending
                     os.remove(media_file)
                     os.remove(watermarked_file)
-
                 except FloodWaitError as e:
                     print(f"FloodWaitError: Sleeping for {e.seconds} seconds")
                     await asyncio.sleep(e.seconds)
@@ -115,23 +94,13 @@ async def start(event):
             await conv.send_message('Invalid delay. Please restart the process with /start.')
             return
 
+        await conv.send_message('Please provide a custom watermark text (leave blank if no watermark is needed):')
+        watermark_text = await conv.get_response()
+
         await conv.send_message('Please provide a caption for the forwarded messages (leave blank if no caption is needed):')
         caption = await conv.get_response()
 
-        await conv.send_message('Please provide button text and URL in the format "button - url" (one button per line, type "done" to finish):')
-
-        button_data = []  # Store button data as dictionary
-        while True:
-            button_input = await conv.get_response()
-            if button_input.text.lower() == "done":
-                break
-            if ' - ' in button_input.text:
-                text, url = button_input.text.split(' - ')
-                button_data.append({'text': text.strip(), 'url': url.strip()})
-            else:
-                await conv.send_message('Invalid format. Please use "button - url".')
-
-        await conv.send_message(f'You have set up the following schedule:\nSchedule Name: {schedule_name.text}\nSource Channel ID: {source_channel_id.text}\nDestination Channel ID: {destination_channel_id.text}\nPost Limit: {post_limit.text}\nDelay: {delay.text} seconds\nCaption: {caption.text if caption.text else "None"}\n\nDo you want to start forwarding? (yes/no)')
+        await conv.send_message(f'You have set up the following schedule:\nSchedule Name: {schedule_name.text}\nSource Channel ID: {source_channel_id.text}\nDestination Channel ID: {destination_channel_id.text}\nPost Limit: {post_limit.text}\nDelay: {delay.text} seconds\nWatermark: "{watermark_text.text if watermark_text.text else "None"}"\nCaption: "{caption.text if caption.text else "None"}"\n\nDo you want to start forwarding? (yes/no)')
         confirmation = await conv.get_response()
         if confirmation.text.lower() != 'yes':
             await conv.send_message('Schedule setup cancelled.')
@@ -146,18 +115,18 @@ async def start(event):
                     'destination_channel_id': int(destination_channel_id.text),
                     'post_limit': int(post_limit.text),
                     'delay': int(delay.text),
-                    'caption': caption.text,
-                    'buttons': button_data  # Store button data as dictionary
+                    'watermark': watermark_text.text,
+                    'caption': caption.text
                 }
             }},
             upsert=True
         )
 
-        await conv.send_message(f'Forwarding messages from {source_channel_id.text} to {destination_channel_id.text} every {delay.text} seconds with caption: "{caption.text}"...')
+        await conv.send_message(f'Forwarding messages from {source_channel_id.text} to {destination_channel_id.text} every {delay.text} seconds with watermark: "{watermark_text.text}" and caption: "{caption.text}"...')
 
         if user_id not in tasks:
             tasks[user_id] = {}
-        task = asyncio.create_task(forward_messages(user_id, schedule_name.text, int(source_channel_id.text), int(destination_channel_id.text), int(post_limit.text), int(delay.text), caption.text, button_data))
+        task = asyncio.create_task(forward_messages(user_id, schedule_name.text, int(source_channel_id.text), int(destination_channel_id.text), int(post_limit.text), int(delay.text), caption.text, watermark_text.text))
         tasks[user_id][schedule_name.text] = task
 
 async def main():
