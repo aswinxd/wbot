@@ -40,7 +40,7 @@ async def forward_messages(user_id, schedule_name, source_channel_id, destinatio
     post_counter = 0
     watermark_text = "sulaiman"  
 
-    async with client:
+     async with client:
         async for message in client.iter_messages(int(source_channel_id), reverse=True):
             if post_counter >= batch_size:
                 await asyncio.sleep(delay)
@@ -48,19 +48,23 @@ async def forward_messages(user_id, schedule_name, source_channel_id, destinatio
                 
             if isinstance(message.media, (MessageMediaPhoto, MessageMediaDocument)):
                 try:
-                  
+                    # Download the media
                     media_file = await client.download_media(message)
                     watermarked_file = f"watermarked_{os.path.basename(media_file)}"
 
-                   
+                    # Add text watermark to the downloaded media (only if it's a video)
                     await add_text_watermark(media_file, watermarked_file, watermark_text)
 
-                   
-                    await client.send_file(int(destination_channel_id), watermarked_file)
+                    # Send the watermarked media to the destination channel
+                    sent_message = await client.send_file(int(destination_channel_id), watermarked_file)
+
+                    # Edit the sent message to add the caption
+                    if caption:
+                        await client.edit_message(int(destination_channel_id), sent_message, file=watermarked_file, caption=caption)
 
                     post_counter += 1
 
-            
+                    # Clean up the media files after sending
                     os.remove(media_file)
                     os.remove(watermarked_file)
                     
@@ -105,11 +109,15 @@ async def start(event):
             await conv.send_message('Invalid delay. Please restart the process with /start.')
             return
 
-        await conv.send_message(f'You have set up the following schedule:\nSchedule Name: {schedule_name.text}\nSource Channel ID: {source_channel_id.text}\nDestination Channel ID: {destination_channel_id.text}\nPost Limit: {post_limit.text}\nDelay: {delay.text} seconds\n\nDo you want to start forwarding? (yes/no)')
+        await conv.send_message('Please provide a caption for the forwarded messages (leave blank if no caption is needed):')
+        caption = await conv.get_response()
+
+        await conv.send_message(f'You have set up the following schedule:\nSchedule Name: {schedule_name.text}\nSource Channel ID: {source_channel_id.text}\nDestination Channel ID: {destination_channel_id.text}\nPost Limit: {post_limit.text}\nDelay: {delay.text} seconds\nCaption: {caption.text if caption.text else "None"}\n\nDo you want to start forwarding? (yes/no)')
         confirmation = await conv.get_response()
         if confirmation.text.lower() != 'yes':
             await conv.send_message('Schedule setup cancelled.')
             return
+
         await collection.update_one(
             {'user_id': user_id},
             {'$push': {
@@ -118,17 +126,18 @@ async def start(event):
                     'source_channel_id': int(source_channel_id.text),
                     'destination_channel_id': int(destination_channel_id.text),
                     'post_limit': int(post_limit.text),
-                    'delay': int(delay.text)
+                    'delay': int(delay.text),
+                    'caption': caption.text
                 }
             }},
             upsert=True
         )
 
-        await conv.send_message(f'Forwarding messages from {source_channel_id.text} to {destination_channel_id.text} every {delay.text} seconds...')
+        await conv.send_message(f'Forwarding messages from {source_channel_id.text} to {destination_channel_id.text} every {delay.text} seconds with caption: "{caption.text}"...')
 
         if user_id not in tasks:
             tasks[user_id] = {}
-        task = asyncio.create_task(forward_messages(user_id, schedule_name.text, int(source_channel_id.text), int(destination_channel_id.text), int(post_limit.text), int(delay.text)))
+        task = asyncio.create_task(forward_messages(user_id, schedule_name.text, int(source_channel_id.text), int(destination_channel_id.text), int(post_limit.text), int(delay.text), caption.text))
         tasks[user_id][schedule_name.text] = task
 
 async def main():
