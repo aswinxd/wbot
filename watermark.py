@@ -9,10 +9,10 @@ import subprocess
 
 api_id = "22181658"
 api_hash = '3138df6840cbdbc28c370fd29218139a'
-bot_token = '7111525295:AAHNh9AQJ4Wejldqm_qb-3P37c4HGGkAAus'
+bot_token = 'your_bot_token_here'
 client = TelegramClient('user_session', api_id, api_hash)
 bot = TelegramClient('bot_session', api_id, api_hash)
-mongo_client = motor.motor_asyncio.AsyncIOMotorClient('mongodb+srv://mdalizadeh16:lavos@cluster0.u21tcwa.mongodb.net/?retryWrites=true&w=majority')
+mongo_client = motor.motor_asyncio.AsyncIOMotorClient('mongodb+srv://your_mongodb_url_here')
 db = mongo_client['telegram_bot']
 collection = db['schedules']
 tasks = {}
@@ -36,22 +36,24 @@ async def start_user_session():
     print("Starting user session...")
     await client.start()
 
-async def forward_messages(user_id, schedule_name, source_channel_id, destination_channel_id, batch_size, delay):
+# Updated forward_messages function with caption support
+async def forward_messages(user_id, schedule_name, source_channel_id, destination_channel_id, batch_size, delay, caption):
     post_counter = 0
     watermark_text = "sulaiman"
-     async with client:
+
+    async with client:
         async for message in client.iter_messages(int(source_channel_id), reverse=True):
             if post_counter >= batch_size:
                 await asyncio.sleep(delay)
                 post_counter = 0
-                
+
             if isinstance(message.media, (MessageMediaPhoto, MessageMediaDocument)):
                 try:
                     # Download the media
                     media_file = await client.download_media(message)
                     watermarked_file = f"watermarked_{os.path.basename(media_file)}"
 
-                    # Add text watermark to the downloaded media (only if it's a video)
+                    # Add text watermark to the downloaded media
                     await add_text_watermark(media_file, watermarked_file, watermark_text)
 
                     # Send the watermarked media to the destination channel
@@ -66,7 +68,7 @@ async def forward_messages(user_id, schedule_name, source_channel_id, destinatio
                     # Clean up the media files after sending
                     os.remove(media_file)
                     os.remove(watermarked_file)
-                    
+
                 except FloodWaitError as e:
                     print(f"FloodWaitError: Sleeping for {e.seconds} seconds")
                     await asyncio.sleep(e.seconds)
@@ -75,10 +77,6 @@ async def forward_messages(user_id, schedule_name, source_channel_id, destinatio
 
             if schedule_name not in tasks[user_id] or tasks[user_id][schedule_name].cancelled():
                 break
-
-
-
-    
 
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
@@ -153,4 +151,3 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
-
