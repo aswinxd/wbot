@@ -61,7 +61,7 @@ async def forward_messages(user_id, schedule_name, source_channel_id, destinatio
 
                     # Edit the sent message to add the caption
                     if caption:
-                        await client.edit_message(int(destination_channel_id), sent_message, file=watermarked_file, caption=caption)
+                        await client.edit_message(int(destination_channel_id), sent_message.id, text=caption)
 
                     post_counter += 1
 
