@@ -17,6 +17,8 @@ db = mongo_client['telegram_bot']
 collection = db['schedules']
 tasks = {}
 
+
+# Updated forward_messages function with caption support
 async def add_text_watermark(input_file, output_file, watermark_text):
     command = [
         'ffmpeg', '-i', input_file,
@@ -36,8 +38,8 @@ async def start_user_session():
     print("Starting user session...")
     await client.start()
 
-# Updated forward_messages function with caption support
-async def forward_messages(user_id, schedule_name, source_channel_id, destination_channel_id, batch_size, delay, caption):
+# Updated forward_messages function with caption and button support
+async def forward_messages(user_id, schedule_name, source_channel_id, destination_channel_id, batch_size, delay, caption, buttons):
     post_counter = 0
     watermark_text = "sulaiman"
 
@@ -56,12 +58,13 @@ async def forward_messages(user_id, schedule_name, source_channel_id, destinatio
                     # Add text watermark to the downloaded media
                     await add_text_watermark(media_file, watermarked_file, watermark_text)
 
-                    # Send the watermarked media to the destination channel
-                    sent_message = await client.send_file(int(destination_channel_id), watermarked_file)
-
-                    # Edit the sent message to add the caption
-                    if caption:
-                        await client.edit_message(int(destination_channel_id), sent_message.id, text=caption)
+                    # Send the watermarked media to the destination channel with caption and buttons
+                    sent_message = await client.send_file(
+                        int(destination_channel_id),
+                        watermarked_file,
+                        caption=caption,
+                        buttons=buttons
+                    )
 
                     post_counter += 1
 
@@ -113,6 +116,19 @@ async def start(event):
         await conv.send_message('Please provide a caption for the forwarded messages (leave blank if no caption is needed):')
         caption = await conv.get_response()
 
+        await conv.send_message('Please provide button text and URL in the format "button - url" (one button per line, type "done" to finish):')
+
+        buttons = []
+        while True:
+            button_input = await conv.get_response()
+            if button_input.text.lower() == "done":
+                break
+            if ' - ' in button_input.text:
+                text, url = button_input.text.split(' - ')
+                buttons.append(Button.url(text.strip(), url.strip()))
+            else:
+                await conv.send_message('Invalid format. Please use "button - url".')
+
         await conv.send_message(f'You have set up the following schedule:\nSchedule Name: {schedule_name.text}\nSource Channel ID: {source_channel_id.text}\nDestination Channel ID: {destination_channel_id.text}\nPost Limit: {post_limit.text}\nDelay: {delay.text} seconds\nCaption: {caption.text if caption.text else "None"}\n\nDo you want to start forwarding? (yes/no)')
         confirmation = await conv.get_response()
         if confirmation.text.lower() != 'yes':
@@ -128,7 +144,8 @@ async def start(event):
                     'destination_channel_id': int(destination_channel_id.text),
                     'post_limit': int(post_limit.text),
                     'delay': int(delay.text),
-                    'caption': caption.text
+                    'caption': caption.text,
+                    'buttons': buttons  # Store buttons for reference
                 }
             }},
             upsert=True
@@ -138,7 +155,7 @@ async def start(event):
 
         if user_id not in tasks:
             tasks[user_id] = {}
-        task = asyncio.create_task(forward_messages(user_id, schedule_name.text, int(source_channel_id.text), int(destination_channel_id.text), int(post_limit.text), int(delay.text), caption.text))
+        task = asyncio.create_task(forward_messages(user_id, schedule_name.text, int(source_channel_id.text), int(destination_channel_id.text), int(post_limit.text), int(delay.text), caption.text, buttons))
         tasks[user_id][schedule_name.text] = task
 
 async def main():
