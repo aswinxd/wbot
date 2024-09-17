@@ -38,8 +38,7 @@ async def start_user_session():
 
 async def forward_messages(user_id, schedule_name, source_channel_id, destination_channel_id, batch_size, delay):
     post_counter = 0
-    watermark_text = "sulaiman"  
-
+    watermark_text = "sulaiman"
      async with client:
         async for message in client.iter_messages(int(source_channel_id), reverse=True):
             if post_counter >= batch_size:
@@ -76,6 +75,10 @@ async def forward_messages(user_id, schedule_name, source_channel_id, destinatio
 
             if schedule_name not in tasks[user_id] or tasks[user_id][schedule_name].cancelled():
                 break
+
+
+
+    
 
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
