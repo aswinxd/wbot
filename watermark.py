@@ -9,7 +9,7 @@ import subprocess
 
 api_id = "22181658"
 api_hash = '3138df6840cbdbc28c370fd29218139a'
-bot_token = ''
+bot_token = '7111525295:AAHNh9AQJ4Wejldqm_qb-3P37c4HGGkAAus'
 client = TelegramClient('user_session', api_id, api_hash)
 bot = TelegramClient('bot_session', api_id, api_hash)
 mongo_client = motor.motor_asyncio.AsyncIOMotorClient('mongodb+srv://mdalizadeh16:lavos@cluster0.u21tcwa.mongodb.net/?retryWrites=true&w=majority')
