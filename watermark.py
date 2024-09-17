@@ -18,7 +18,6 @@ collection = db['schedules']
 tasks = {}
 
 
-# Updated forward_messages function with caption support
 async def add_text_watermark(input_file, output_file, watermark_text):
     command = [
         'ffmpeg', '-i', input_file,
@@ -39,9 +38,12 @@ async def start_user_session():
     await client.start()
 
 # Updated forward_messages function with caption and button support
-async def forward_messages(user_id, schedule_name, source_channel_id, destination_channel_id, batch_size, delay, caption, buttons):
+async def forward_messages(user_id, schedule_name, source_channel_id, destination_channel_id, batch_size, delay, caption, button_data):
     post_counter = 0
     watermark_text = "sulaiman"
+
+    # Convert button data (dict) back to Telethon Button objects
+    buttons = [Button.url(btn['text'], btn['url']) for btn in button_data]
 
     async with client:
         async for message in client.iter_messages(int(source_channel_id), reverse=True):
@@ -118,14 +120,14 @@ async def start(event):
 
         await conv.send_message('Please provide button text and URL in the format "button - url" (one button per line, type "done" to finish):')
 
-        buttons = []
+        button_data = []  # Store button data as dictionary
         while True:
             button_input = await conv.get_response()
             if button_input.text.lower() == "done":
                 break
             if ' - ' in button_input.text:
                 text, url = button_input.text.split(' - ')
-                buttons.append(Button.url(text.strip(), url.strip()))
+                button_data.append({'text': text.strip(), 'url': url.strip()})
             else:
                 await conv.send_message('Invalid format. Please use "button - url".')
 
@@ -145,7 +147,7 @@ async def start(event):
                     'post_limit': int(post_limit.text),
                     'delay': int(delay.text),
                     'caption': caption.text,
-                    'buttons': buttons  # Store buttons for reference
+                    'buttons': button_data  # Store button data as dictionary
                 }
             }},
             upsert=True
@@ -155,7 +157,7 @@ async def start(event):
 
         if user_id not in tasks:
             tasks[user_id] = {}
-        task = asyncio.create_task(forward_messages(user_id, schedule_name.text, int(source_channel_id.text), int(destination_channel_id.text), int(post_limit.text), int(delay.text), caption.text, buttons))
+        task = asyncio.create_task(forward_messages(user_id, schedule_name.text, int(source_channel_id.text), int(destination_channel_id.text), int(post_limit.text), int(delay.text), caption.text, button_data))
         tasks[user_id][schedule_name.text] = task
 
 async def main():
