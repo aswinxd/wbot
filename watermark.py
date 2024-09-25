@@ -28,6 +28,7 @@ async def add_text_watermark(input_file, output_file, watermark_text):
         if result.returncode != 0:
             print(f"FFmpeg error: {result.stderr.decode()}")
         else:
+            return
       #      print(f"Watermark added successfully to {output_file}")
     except Exception as e:
         print(f"Error applying watermark: {e}")
