@@ -1,4 +1,4 @@
-from telethon import TelegramClient, events
+from telethon import TelegramClient, events, Button
 from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument
 from telethon.errors import FloodWaitError
 import asyncio
@@ -15,6 +15,7 @@ mongo_client = motor.motor_asyncio.AsyncIOMotorClient('mongodb+srv://mdalizadeh1
 db = mongo_client['telegram_bot']
 collection = db['schedules']
 tasks = {}
+pause_flags = {}
 
 async def add_text_watermark(input_file, output_file, watermark_text):
     command = [
@@ -38,7 +39,14 @@ async def start_user_session():
 async def forward_messages(user_id, schedule_name, source_channel_id, destination_channel_id, batch_size, delay, caption, watermark_text):
     post_counter = 0
 
-    async with client:
+    while True:
+        if schedule_name not in tasks or tasks[schedule_name].cancelled():
+            break
+
+        if pause_flags.get(schedule_name):
+            await asyncio.sleep(1)  # Pause until resumed
+            continue
+
         async for message in client.iter_messages(int(source_channel_id), reverse=True):
             if post_counter >= batch_size:
                 await asyncio.sleep(delay)
@@ -126,8 +134,89 @@ async def start(event):
 
         if user_id not in tasks:
             tasks[user_id] = {}
+
+        pause_flags[schedule_name.text] = False
         task = asyncio.create_task(forward_messages(user_id, schedule_name.text, int(source_channel_id.text), int(destination_channel_id.text), int(post_limit.text), int(delay.text), caption.text, watermark_text.text))
         tasks[user_id][schedule_name.text] = task
+
+@bot.on(events.NewMessage(pattern='/configure'))
+async def configure(event):
+    user_id = event.sender_id
+    schedules = await collection.find({'user_id': user_id}).to_list(length=100)
+    
+    if not schedules:
+        await event.reply("No schedules found.")
+        return
+
+    buttons = []
+    for schedule in schedules[0]['schedules']:
+        status = "Running" if not pause_flags.get(schedule['name'], False) else "Paused"
+        buttons.append(Button.inline(f"{schedule['name']} ({status})", data=schedule['name']))
+
+    await event.reply("Select a schedule to configure:", buttons=buttons)
+
+@bot.on(events.CallbackQuery)
+async def callback_handler(event):
+    schedule_name = event.data.decode('utf-8')
+    schedule = await collection.find_one({'schedules.name': schedule_name})
+
+    if not schedule:
+        await event.reply(f"Schedule '{schedule_name}' not found.")
+        return
+
+    schedule = schedule['schedules'][0]
+    status = "Running" if not pause_flags.get(schedule_name, False) else "Paused"
+
+    details = (
+        f"Schedule: {schedule['name']}\n"
+        f"Source Channel ID: {schedule['source_channel_id']}\n"
+        f"Destination Channel ID: {schedule['destination_channel_id']}\n"
+        f"Post Limit: {schedule['post_limit']}\n"
+        f"Delay: {schedule['delay']} seconds\n"
+        f"Watermark: {schedule['watermark']}\n"
+        f"Caption: {schedule['caption']}\n"
+        f"Status: {status}"
+    )
+
+    buttons = []
+    if status == "Running":
+        buttons.append(Button.inline("Pause", data=f"pause:{schedule_name}"))
+        buttons.append(Button.inline("Stop/Delete", data=f"stop:{schedule_name}"))
+    else:
+        buttons.append(Button.inline("Resume", data=f"resume:{schedule_name}"))
+
+    await event.edit(details, buttons=buttons)
+
+@bot.on(events.CallbackQuery(pattern=r"pause:"))
+async def pause_schedule(event):
+    schedule_name = event.data.decode('utf-8').split(":")[1]
+    pause_flags[schedule_name] = True
+    await event.edit(f"Schedule '{schedule_name}' has been paused.", buttons=[Button.inline("Resume", data=f"resume:{schedule_name}")])
+
+@bot.on(events.CallbackQuery(pattern=r"resume:"))
+async def resume_schedule(event):
+    schedule_name = event.data.decode('utf-8').split(":")[1]
+    pause_flags[schedule_name] = False
+    await event.edit(f"Schedule '{schedule_name}' has been resumed.", buttons=[Button.inline("Pause", data=f"pause:{schedule_name}"), Button.inline("Stop/Delete", data=f"stop:{schedule_name}")])
+
+@bot.on(events.CallbackQuery(pattern=r"stop:"))
+async def stop_schedule(event):
+    schedule_name = event.data.decode('utf-8').split(":")[1]
+    buttons = [Button.inline("Yes", data=f"confirm_stop:{schedule_name}"), Button.inline("No", data="cancel_stop")]
+    await event.edit(f"Are you sure you want to stop and delete schedule '{schedule_name}'?", buttons=buttons)
+
+@bot.on(events.CallbackQuery(pattern=r"confirm_stop:"))
+async def confirm_stop_schedule(event):
+    schedule_name = event.data.decode('utf-8').split(":")[1]
+    tasks[schedule_name].cancel()
+    del tasks[schedule_name]
+    del pause_flags[schedule_name]
+    await collection.update_one({'schedules.name': schedule_name}, {'$pull': {'schedules': {'name': schedule_name}}})
+    await event.edit(f"Schedule '{schedule_name}' has been stopped and deleted.")
+
+@bot.on(events.CallbackQuery(pattern="cancel_stop"))
+async def cancel_stop_schedule(event):
+    await event.edit("Stop operation canceled.")
 
 async def main():
     await start_user_session()
@@ -139,3 +228,4 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
+
