@@ -14,7 +14,7 @@ bot = TelegramClient('bot_session', api_id, api_hash)
 mongo_client = motor.motor_asyncio.AsyncIOMotorClient('mongodb+srv://mdalizadeh16:lavos@cluster0.u21tcwa.mongodb.net/?retryWrites=true&w=majority')
 db = mongo_client['telegram_bot']
 collection = db['schedules']
-tasks = {}  # Now will track both task and state (active/paused)
+tasks = {} 
 
 
 async def add_text_watermark(input_file, output_file, watermark_text):
@@ -28,7 +28,7 @@ async def add_text_watermark(input_file, output_file, watermark_text):
         if result.returncode != 0:
             print(f"FFmpeg error: {result.stderr.decode()}")
         else:
-            print(f"Watermark added successfully to {output_file}")
+      #      print(f"Watermark added successfully to {output_file}")
     except Exception as e:
         print(f"Error applying watermark: {e}")
 
@@ -43,10 +43,10 @@ async def forward_messages(user_id, schedule_name, source_channel_id, destinatio
 
     async with client:
         async for message in client.iter_messages(int(source_channel_id), reverse=True):
-            # Check if the schedule is paused
+     
             if tasks[user_id][schedule_name]['paused']:
-                print(f"Schedule {schedule_name} is paused. Waiting to resume...")
-                await asyncio.sleep(1)  # Wait a bit before re-checking
+              #  print(f"Schedule {schedule_name} is paused. Waiting to resume...")
+                await asyncio.sleep(1) 
                 continue
 
             if post_counter >= batch_size:
@@ -67,13 +67,31 @@ async def forward_messages(user_id, schedule_name, source_channel_id, destinatio
                     await asyncio.sleep(e.seconds)
                 except Exception as e:
                     print(f"An error occurred: {e}")
-
-            # Check if the task is cancelled (schedule stopped)
             if schedule_name not in tasks[user_id] or tasks[user_id][schedule_name]['task'].cancelled():
                 break
 
 
 @bot.on(events.NewMessage(pattern='/start'))
+async def start(event):
+    user_id = event.sender_id
+    instructions = (
+        "Here's how you can use it:\n\n"
+        "1. **/add** - Set up a new message forwarding schedule.\n"
+        "2. **/pause <schedule_name>** - Pause a currently running schedule.\n"
+        "3. **/resume <schedule_name>** - Resume a paused schedule.\n"
+        "4. **/stop <schedule_name>** - Stop and remove a schedule.\n\n"
+        "For detailed setup, when you use `/add_schedule`, the bot will ask you for the following information:\n"
+        "- **Schedule Name**: A name for the schedule.\n"
+        "- **Source Channel ID**: The channel from where messages will be forwarded.\n"
+        "- **Destination Channel ID**: The channel to where messages will be forwarded.\n"
+        "- **Batch Size**: Number of messages to forward in each batch.\n"
+        "- **Delay**: Time (in seconds) between each batch.\n"
+        "- **Watermark Text**: Optional text to add to forwarded images and videos.\n"
+        "- **Caption**: Optional caption to add to the forwarded messages.\n\n"
+        "Use `/add` to get started with setting up a new schedule!"
+    )
+    await event.respond(instructions)
+@bot.on(events.NewMessage(pattern='/add'))
 async def start(event):
     user_id = event.sender_id
 
