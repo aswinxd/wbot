@@ -139,94 +139,43 @@ async def start(event):
         task = asyncio.create_task(forward_messages(user_id, schedule_name.text, int(source_channel_id.text), int(destination_channel_id.text), int(post_limit.text), int(delay.text), caption.text, watermark_text.text))
         tasks[user_id][schedule_name.text] = task
 
-@bot.on(events.CallbackQuery)
-async def callback_handler(event):
-    schedule_name = event.data.decode('utf-8')
-    schedule = await collection.find_one({'schedules.name': schedule_name})
-
-    if not schedule:
-        await event.reply(f"Schedule '{schedule_name}' not found.")
-        return
-
-    # Fetch the relevant schedule
-    schedule = schedule['schedules'][0]
-    status = "Running" if not pause_flags.get(schedule_name, False) else "Paused"
-
-    # Handle missing keys with .get() to avoid KeyError
-    details = (
-        f"Schedule: {schedule.get('name', 'N/A')}\n"
-        f"Source Channel ID: {schedule.get('source_channel_id', 'N/A')}\n"
-        f"Destination Channel ID: {schedule.get('destination_channel_id', 'N/A')}\n"
-        f"Post Limit: {schedule.get('post_limit', 'N/A')}\n"
-        f"Delay: {schedule.get('delay', 'N/A')} seconds\n"
-        f"Watermark: {schedule.get('watermark', 'None')}\n"
-        f"Caption: {schedule.get('caption', 'None')}\n"
-        f"Status: {status}"
-    )
-
-    # Display buttons for pause/resume and stop/delete
-    buttons = []
-    if status == "Running":
-        buttons.append(Button.inline("Pause", data=f"pause:{schedule_name}"))
-        buttons.append(Button.inline("Stop/Delete", data=f"stop:{schedule_name}"))
-    else:
-        buttons.append(Button.inline("Resume", data=f"resume:{schedule_name}"))
-
-    await event.edit(details, buttons=buttons)
-
-@bot.on(events.NewMessage(pattern='/configure'))
-async def configure(event):
+@bot.on(events.NewMessage(pattern='/pause'))
+async def pause(event):
     user_id = event.sender_id
-    schedules = await collection.find({'user_id': user_id}).to_list(length=100)
-    
-    if not schedules:
-        await event.reply("No schedules found.")
-        return
+    await event.reply('Please provide the schedule name to pause:')
+    schedule_name = await event.get_response()
 
-    # Create buttons, grouping them neatly into multiple rows if necessary
-    buttons = []
-    row = []
-    for schedule in schedules[0]['schedules']:
-        status = "Running" if not pause_flags.get(schedule['name'], False) else "Paused"
-        row.append(Button.inline(f"{schedule['name']} ({status})", data=schedule['name']))
-        if len(row) == 3:  # Group buttons into rows of 3
-            buttons.append(row)
-            row = []
+    if schedule_name.text in tasks:
+        pause_flags[schedule_name.text] = True
+        await event.reply(f'Schedule "{schedule_name.text}" has been paused.')
+    else:
+        await event.reply(f'Schedule "{schedule_name.text}" not found.')
 
-    if row:
-        buttons.append(row)  # Add any remaining buttons
+@bot.on(events.NewMessage(pattern='/resume'))
+async def resume(event):
+    user_id = event.sender_id
+    await event.reply('Please provide the schedule name to resume:')
+    schedule_name = await event.get_response()
 
-    await event.reply("Select a schedule to configure:", buttons=buttons)
-@bot.on(events.CallbackQuery(pattern=r"pause:"))
-async def pause_schedule(event):
-    schedule_name = event.data.decode('utf-8').split(":")[1]
-    pause_flags[schedule_name] = True
-    await event.edit(f"Schedule '{schedule_name}' has been paused.", buttons=[Button.inline("Resume", data=f"resume:{schedule_name}")])
+    if schedule_name.text in tasks:
+        pause_flags[schedule_name.text] = False
+        await event.reply(f'Schedule "{schedule_name.text}" has been resumed.')
+    else:
+        await event.reply(f'Schedule "{schedule_name.text}" not found.')
 
-@bot.on(events.CallbackQuery(pattern=r"resume:"))
-async def resume_schedule(event):
-    schedule_name = event.data.decode('utf-8').split(":")[1]
-    pause_flags[schedule_name] = False
-    await event.edit(f"Schedule '{schedule_name}' has been resumed.", buttons=[Button.inline("Pause", data=f"pause:{schedule_name}"), Button.inline("Stop/Delete", data=f"stop:{schedule_name}")])
+@bot.on(events.NewMessage(pattern='/stop'))
+async def stop(event):
+    user_id = event.sender_id
+    await event.reply('Please provide the schedule name to stop:')
+    schedule_name = await event.get_response()
 
-@bot.on(events.CallbackQuery(pattern=r"stop:"))
-async def stop_schedule(event):
-    schedule_name = event.data.decode('utf-8').split(":")[1]
-    buttons = [Button.inline("Yes", data=f"confirm_stop:{schedule_name}"), Button.inline("No", data="cancel_stop")]
-    await event.edit(f"Are you sure you want to stop and delete schedule '{schedule_name}'?", buttons=buttons)
-
-@bot.on(events.CallbackQuery(pattern=r"confirm_stop:"))
-async def confirm_stop_schedule(event):
-    schedule_name = event.data.decode('utf-8').split(":")[1]
-    tasks[schedule_name].cancel()
-    del tasks[schedule_name]
-    del pause_flags[schedule_name]
-    await collection.update_one({'schedules.name': schedule_name}, {'$pull': {'schedules': {'name': schedule_name}}})
-    await event.edit(f"Schedule '{schedule_name}' has been stopped and deleted.")
-
-@bot.on(events.CallbackQuery(pattern="cancel_stop"))
-async def cancel_stop_schedule(event):
-    await event.edit("Stop operation canceled.")
+    if schedule_name.text in tasks:
+        tasks[schedule_name.text].cancel()
+        del tasks[schedule_name.text]
+        del pause_flags[schedule_name.text]
+        await event.reply(f'Schedule "{schedule_name.text}" has been stopped.')
+    else:
+        await event.reply(f'Schedule "{schedule_name.text}" not found.')
 
 async def main():
     await start_user_session()
@@ -238,4 +187,3 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
-
