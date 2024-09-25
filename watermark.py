@@ -139,22 +139,6 @@ async def start(event):
         task = asyncio.create_task(forward_messages(user_id, schedule_name.text, int(source_channel_id.text), int(destination_channel_id.text), int(post_limit.text), int(delay.text), caption.text, watermark_text.text))
         tasks[user_id][schedule_name.text] = task
 
-@bot.on(events.NewMessage(pattern='/configure'))
-async def configure(event):
-    user_id = event.sender_id
-    schedules = await collection.find({'user_id': user_id}).to_list(length=100)
-    
-    if not schedules:
-        await event.reply("No schedules found.")
-        return
-
-    buttons = []
-    for schedule in schedules[0]['schedules']:
-        status = "Running" if not pause_flags.get(schedule['name'], False) else "Paused"
-        buttons.append(Button.inline(f"{schedule['name']} ({status})", data=schedule['name']))
-
-    await event.reply("Select a schedule to configure:", buttons=buttons)
-
 @bot.on(events.CallbackQuery)
 async def callback_handler(event):
     schedule_name = event.data.decode('utf-8')
@@ -164,20 +148,23 @@ async def callback_handler(event):
         await event.reply(f"Schedule '{schedule_name}' not found.")
         return
 
+    # Fetch the relevant schedule
     schedule = schedule['schedules'][0]
     status = "Running" if not pause_flags.get(schedule_name, False) else "Paused"
 
+    # Handle missing keys with .get() to avoid KeyError
     details = (
-        f"Schedule: {schedule['name']}\n"
-        f"Source Channel ID: {schedule['source_channel_id']}\n"
-        f"Destination Channel ID: {schedule['destination_channel_id']}\n"
-        f"Post Limit: {schedule['post_limit']}\n"
-        f"Delay: {schedule['delay']} seconds\n"
-        f"Watermark: {schedule['watermark']}\n"
-        f"Caption: {schedule['caption']}\n"
+        f"Schedule: {schedule.get('name', 'N/A')}\n"
+        f"Source Channel ID: {schedule.get('source_channel_id', 'N/A')}\n"
+        f"Destination Channel ID: {schedule.get('destination_channel_id', 'N/A')}\n"
+        f"Post Limit: {schedule.get('post_limit', 'N/A')}\n"
+        f"Delay: {schedule.get('delay', 'N/A')} seconds\n"
+        f"Watermark: {schedule.get('watermark', 'None')}\n"
+        f"Caption: {schedule.get('caption', 'None')}\n"
         f"Status: {status}"
     )
 
+    # Display buttons for pause/resume and stop/delete
     buttons = []
     if status == "Running":
         buttons.append(Button.inline("Pause", data=f"pause:{schedule_name}"))
@@ -187,6 +174,29 @@ async def callback_handler(event):
 
     await event.edit(details, buttons=buttons)
 
+@bot.on(events.NewMessage(pattern='/configure'))
+async def configure(event):
+    user_id = event.sender_id
+    schedules = await collection.find({'user_id': user_id}).to_list(length=100)
+    
+    if not schedules:
+        await event.reply("No schedules found.")
+        return
+
+    # Create buttons, grouping them neatly into multiple rows if necessary
+    buttons = []
+    row = []
+    for schedule in schedules[0]['schedules']:
+        status = "Running" if not pause_flags.get(schedule['name'], False) else "Paused"
+        row.append(Button.inline(f"{schedule['name']} ({status})", data=schedule['name']))
+        if len(row) == 3:  # Group buttons into rows of 3
+            buttons.append(row)
+            row = []
+
+    if row:
+        buttons.append(row)  # Add any remaining buttons
+
+    await event.reply("Select a schedule to configure:", buttons=buttons)
 @bot.on(events.CallbackQuery(pattern=r"pause:"))
 async def pause_schedule(event):
     schedule_name = event.data.decode('utf-8').split(":")[1]
