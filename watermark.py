@@ -1,4 +1,4 @@
-from telethon import TelegramClient, events, Button
+from telethon import TelegramClient, events
 from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument
 from telethon.errors import FloodWaitError
 import asyncio
@@ -14,8 +14,8 @@ bot = TelegramClient('bot_session', api_id, api_hash)
 mongo_client = motor.motor_asyncio.AsyncIOMotorClient('mongodb+srv://mdalizadeh16:lavos@cluster0.u21tcwa.mongodb.net/?retryWrites=true&w=majority')
 db = mongo_client['telegram_bot']
 collection = db['schedules']
-tasks = {}
-pause_flags = {}
+tasks = {}  # Now will track both task and state (active/paused)
+
 
 async def add_text_watermark(input_file, output_file, watermark_text):
     command = [
@@ -32,22 +32,23 @@ async def add_text_watermark(input_file, output_file, watermark_text):
     except Exception as e:
         print(f"Error applying watermark: {e}")
 
+
 async def start_user_session():
     print("Starting user session...")
     await client.start()
 
+
 async def forward_messages(user_id, schedule_name, source_channel_id, destination_channel_id, batch_size, delay, caption, watermark_text):
     post_counter = 0
 
-    while True:
-        if schedule_name not in tasks or tasks[schedule_name].cancelled():
-            break
-
-        if pause_flags.get(schedule_name):
-            await asyncio.sleep(1)  # Pause until resumed
-            continue
-
+    async with client:
         async for message in client.iter_messages(int(source_channel_id), reverse=True):
+            # Check if the schedule is paused
+            if tasks[user_id][schedule_name]['paused']:
+                print(f"Schedule {schedule_name} is paused. Waiting to resume...")
+                await asyncio.sleep(1)  # Wait a bit before re-checking
+                continue
+
             if post_counter >= batch_size:
                 await asyncio.sleep(delay)
                 post_counter = 0
@@ -67,8 +68,10 @@ async def forward_messages(user_id, schedule_name, source_channel_id, destinatio
                 except Exception as e:
                     print(f"An error occurred: {e}")
 
-            if schedule_name not in tasks[user_id] or tasks[user_id][schedule_name].cancelled():
+            # Check if the task is cancelled (schedule stopped)
+            if schedule_name not in tasks[user_id] or tasks[user_id][schedule_name]['task'].cancelled():
                 break
+
 
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
@@ -135,47 +138,33 @@ async def start(event):
         if user_id not in tasks:
             tasks[user_id] = {}
 
-        pause_flags[schedule_name.text] = False
         task = asyncio.create_task(forward_messages(user_id, schedule_name.text, int(source_channel_id.text), int(destination_channel_id.text), int(post_limit.text), int(delay.text), caption.text, watermark_text.text))
-        tasks[user_id][schedule_name.text] = task
+        tasks[user_id][schedule_name.text] = {'task': task, 'paused': False}
+
 
 @bot.on(events.NewMessage(pattern='/pause'))
-async def pause(event):
+async def pause_schedule(event):
     user_id = event.sender_id
-    await event.reply('Please provide the schedule name to pause:')
-    schedule_name = await event.get_response()
+    schedule_name = event.message.text.split()[1]
 
-    if schedule_name.text in tasks:
-        pause_flags[schedule_name.text] = True
-        await event.reply(f'Schedule "{schedule_name.text}" has been paused.')
+    if user_id in tasks and schedule_name in tasks[user_id]:
+        tasks[user_id][schedule_name]['paused'] = True
+        await event.respond(f"Schedule '{schedule_name}' has been paused.")
     else:
-        await event.reply(f'Schedule "{schedule_name.text}" not found.')
+        await event.respond("No such schedule is running.")
+
 
 @bot.on(events.NewMessage(pattern='/resume'))
-async def resume(event):
+async def resume_schedule(event):
     user_id = event.sender_id
-    await event.reply('Please provide the schedule name to resume:')
-    schedule_name = await event.get_response()
+    schedule_name = event.message.text.split()[1]
 
-    if schedule_name.text in tasks:
-        pause_flags[schedule_name.text] = False
-        await event.reply(f'Schedule "{schedule_name.text}" has been resumed.')
+    if user_id in tasks and schedule_name in tasks[user_id]:
+        tasks[user_id][schedule_name]['paused'] = False
+        await event.respond(f"Schedule '{schedule_name}' has been resumed.")
     else:
-        await event.reply(f'Schedule "{schedule_name.text}" not found.')
+        await event.respond("No such schedule is running.")
 
-@bot.on(events.NewMessage(pattern='/stop'))
-async def stop(event):
-    user_id = event.sender_id
-    await event.reply('Please provide the schedule name to stop:')
-    schedule_name = await event.get_response()
-
-    if schedule_name.text in tasks:
-        tasks[schedule_name.text].cancel()
-        del tasks[schedule_name.text]
-        del pause_flags[schedule_name.text]
-        await event.reply(f'Schedule "{schedule_name.text}" has been stopped.')
-    else:
-        await event.reply(f'Schedule "{schedule_name.text}" not found.')
 
 async def main():
     await start_user_session()
@@ -184,6 +173,7 @@ async def main():
     print("Bot started")
     await client.run_until_disconnected()
     await bot.run_until_disconnected()
+
 
 if __name__ == '__main__':
     asyncio.run(main())
