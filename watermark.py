@@ -18,8 +18,16 @@ tasks = {}
 
 
 async def add_text_watermark(input_file, output_file, watermark_text):
+    if not os.path.exists(input_file):
+        print(f"Error: {input_file} does not exist.")
+        return
+    if not input_file.lower().endswith(('.png', '.jpg', '.jpeg', '.mp4', '.mkv', '.avi')):
+        print(f"Error: {input_file} is not a valid media format.")
+        return
+
+
     safe_watermark_text = watermark_text.replace("'", "\\'").replace("{", "\\{").replace("}", "\\}")
-    
+
     command = [
         'ffmpeg', '-i', input_file,
         '-vf', f"drawtext=text='{safe_watermark_text}':fontcolor=white:fontsize=24:borderw=2:bordercolor=black:x=10:y=(h-text_h)/2",
@@ -30,7 +38,7 @@ async def add_text_watermark(input_file, output_file, watermark_text):
         if result.returncode != 0:
             print(f"FFmpeg error: {result.stderr.decode()}")
         else:
-            return
+            print(f"Watermark added successfully to {output_file}")
     except Exception as e:
         print(f"Error applying watermark: {e}")
 
