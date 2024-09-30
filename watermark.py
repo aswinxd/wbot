@@ -18,9 +18,12 @@ tasks = {}
 
 
 async def add_text_watermark(input_file, output_file, watermark_text):
+    # Escape any special characters in the watermark text
+    safe_watermark_text = watermark_text.replace("'", "\\'").replace("{", "\\{").replace("}", "\\}")
+    
     command = [
         'ffmpeg', '-i', input_file,
-        '-vf', "drawtext=text='{watermark_text}':fontcolor=white:fontsize=24:borderw=2:bordercolor=black:x=10:y=(h-text_h)/2",
+        '-vf', f"drawtext=text='{safe_watermark_text}':fontcolor=white:fontsize=24:borderw=2:bordercolor=black:x=10:y=(h-text_h)/2",
         '-codec:a', 'copy', output_file
     ]
     try:
@@ -29,10 +32,8 @@ async def add_text_watermark(input_file, output_file, watermark_text):
             print(f"FFmpeg error: {result.stderr.decode()}")
         else:
             return
-      #      print(f"Watermark added successfully to {output_file}")
     except Exception as e:
         print(f"Error applying watermark: {e}")
-
 
 async def start_user_session():
     print("Starting user session...")
