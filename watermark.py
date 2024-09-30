@@ -47,21 +47,41 @@ async def start_user_session():
     await client.start()
 
 
+
 async def forward_messages(user_id, schedule_name, source_channel_id, destination_channel_id, batch_size, delay, caption, watermark_text):
     post_counter = 0
+    max_duration = 20 * 60  # 20 minutes in seconds
+    max_file_size = 100 * 1024 * 1024  # 100 MB in bytes
 
     async with client:
         async for message in client.iter_messages(int(source_channel_id), reverse=True):
-     
+            
             if tasks[user_id][schedule_name]['paused']:
-                await asyncio.sleep(1) 
+                await asyncio.sleep(1)
                 continue
 
             if post_counter >= batch_size:
                 await asyncio.sleep(delay)
                 post_counter = 0
 
-            if isinstance(message.media, (MessageMediaPhoto, MessageMediaDocument)):
+            # Check if the message contains media
+            if isinstance(message.media, MessageMediaDocument):
+                # Check if the media is a video and not a photo
+                if hasattr(message.media, 'document'):
+                    video_attrs = next(
+                        (attr for attr in message.media.document.attributes if hasattr(attr, 'duration')), None
+                    )
+                    file_size = message.media.document.size
+                    
+                    # Check duration and file size
+                    if video_attrs and video_attrs.duration > max_duration:
+                        print(f"Skipping video: {message.id} - duration too long")
+                        continue
+
+                    if file_size > max_file_size:
+                        print(f"Skipping video: {message.id} - file size too large")
+                        continue
+                
                 try:
                     media_file = await client.download_media(message)
                     watermarked_file = f"watermarked_{os.path.basename(media_file)}"
@@ -77,7 +97,6 @@ async def forward_messages(user_id, schedule_name, source_channel_id, destinatio
                     print(f"An error occurred: {e}")
             if schedule_name not in tasks[user_id] or tasks[user_id][schedule_name]['task'].cancelled():
                 break
-
 
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
