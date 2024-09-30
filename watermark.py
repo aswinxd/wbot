@@ -18,7 +18,6 @@ tasks = {}
 
 
 async def add_text_watermark(input_file, output_file, watermark_text):
-    # Escape any special characters in the watermark text
     safe_watermark_text = watermark_text.replace("'", "\\'").replace("{", "\\{").replace("}", "\\}")
     
     command = [
@@ -47,7 +46,6 @@ async def forward_messages(user_id, schedule_name, source_channel_id, destinatio
         async for message in client.iter_messages(int(source_channel_id), reverse=True):
      
             if tasks[user_id][schedule_name]['paused']:
-              #  print(f"Schedule {schedule_name} is paused. Waiting to resume...")
                 await asyncio.sleep(1) 
                 continue
 
@@ -82,7 +80,7 @@ async def start(event):
         "2. **/pause <schedule_name>** - Pause a currently running schedule.\n"
         "3. **/resume <schedule_name>** - Resume a paused schedule.\n"
         "4. **/stop <schedule_name>** - Stop and remove a schedule.\n\n"
-        "For detailed setup, when you use `/add_schedule`, the bot will ask you for the following information:\n"
+        "For detailed setup, when you use `/add`, the bot will ask you for the following information:\n"
         "- **Schedule Name**: A name for the schedule.\n"
         "- **Source Channel ID**: The channel from where messages will be forwarded.\n"
         "- **Destination Channel ID**: The channel to where messages will be forwarded.\n"
