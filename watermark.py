@@ -20,7 +20,7 @@ tasks = {}
 async def add_text_watermark(input_file, output_file, watermark_text):
     command = [
         'ffmpeg', '-i', input_file,
-        '-vf', f"drawtext=text='{watermark_text}':fontcolor=red:fontsize=24:x=10:y=(h-text_h)/2",
+        '-vf', f"drawtext=text='{watermark_text}':fontcolor=white:fontsize=24:borderw=2:bordercolor=black:x=10:y=(h-text_h)/2",
         '-codec:a', 'copy', output_file
     ]
     try:
