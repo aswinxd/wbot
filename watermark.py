@@ -5,18 +5,15 @@ import asyncio
 import motor.motor_asyncio
 import os
 import subprocess
-
 api_id = "22181658"
 api_hash = '3138df6840cbdbc28c370fd29218139a'
-bot_token = '7022599037:AAFLJR-NI5vWD_7roOyCdo4RFq9oP8wEKZ8'
+bot_token = '7022599037:AAFLJR-NCdo4RFq9oP8wEKZ8'
 client = TelegramClient('user_session', api_id, api_hash)
 bot = TelegramClient('bot_session', api_id, api_hash)
-mongo_client = motor.motor_asyncio.AsyncIOMotorClient('mongodb+srv://mdalizadeh16:lavos@cluster0.u21tcwa.mongodb.net/?retryWrites=true&w=majority')
+mongo_client = motor.motor_asyncio.AsyncIOMotorClient('..')
 db = mongo_client['telegram_bot']
 collection = db['schedules']
 tasks = {} 
-
-
 async def add_text_watermark(input_file, output_file, watermark_text):
     command = [
         'ffmpeg', '-i', input_file,
@@ -34,8 +31,6 @@ async def add_text_watermark(input_file, output_file, watermark_text):
 async def start_user_session():
     print("Starting user session...")
     await client.start()
-
-
 async def forward_messages(user_id, schedule_name, source_channel_id, destination_channel_id, batch_size, delay, caption, watermark_text):
     post_counter = 0
 
@@ -66,8 +61,6 @@ async def forward_messages(user_id, schedule_name, source_channel_id, destinatio
                     print(f"An error occurred: {e}")
             if schedule_name not in tasks[user_id] or tasks[user_id][schedule_name]['task'].cancelled():
                 break
-
-
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
     user_id = event.sender_id
@@ -179,8 +172,6 @@ async def resume_schedule(event):
         await event.respond(f"Schedule '{schedule_name}' has been resumed.")
     else:
         await event.respond("No such schedule is running.")
-
-
 async def main():
     await start_user_session()
     print("User session started")
@@ -188,7 +179,5 @@ async def main():
     print("Bot started")
     await client.run_until_disconnected()
     await bot.run_until_disconnected()
-
-
 if __name__ == '__main__':
     asyncio.run(main())
